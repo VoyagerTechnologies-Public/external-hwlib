@@ -35,7 +35,6 @@ ivv-itc@lists.nasa.gov
   #include <linux/spi/spidev.h>
 #endif
 
-
 #ifdef __rtems__
     #include <rtems.h>
     #include <bsp.h>
@@ -50,7 +49,6 @@ ivv-itc@lists.nasa.gov
     #include <grlib/spictrl.h>
     #include <rtems/bspIo.h>
 #endif
-
 
 /*
 ** Definitions

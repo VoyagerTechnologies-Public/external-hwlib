@@ -212,8 +212,8 @@ int32_t spi_transaction(spi_info_t* device, uint8_t *txBuff, uint8_t * rxBuffer,
   xfer.delay_usecs = delay;
   xfer.bits_per_word = bits;
   xfer.cs_change = deselect;
-  xfer.tx_nbits = (bits * length);
-  xfer.rx_nbits = (bits * length);
+  xfer.tx_nbits = (unsigned char)(bits * length);
+  xfer.rx_nbits = (unsigned char)(bits * length);
 
   // Perform a full duplex transaction
   ret = ioctl(device->handle, SPI_IOC_MESSAGE(1), &xfer);

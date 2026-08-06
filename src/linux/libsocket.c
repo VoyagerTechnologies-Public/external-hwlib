@@ -83,9 +83,9 @@ int32_t socket_create(socket_info_t* socket_info)
     if(socket_info->category==server || socket_info->type==dgram)
     {
         // Prepare the sockaddr_in structure
-        sockaddr.sin_family = address_family;
+        sockaddr.sin_family = (sa_family_t)address_family;
         sockaddr.sin_addr.s_addr = inet_addr(socket_info->ip_address);
-        sockaddr.sin_port = htons(socket_info->port_num);       
+        sockaddr.sin_port = htons((uint16_t)socket_info->port_num);
 
         // Bind the socket 
         ret = bind(socket_info->sockfd,(struct sockaddr *)&sockaddr , sizeof(sockaddr));
@@ -170,7 +170,7 @@ int32_t socket_accept(socket_info_t* socket_info)
 {
     int c;
     int ret;
-    struct sockaddr_in client;
+    struct sockaddr_in client_addr;
     int32_t status;
 
     status = SOCKET_SUCCESS;
@@ -184,7 +184,7 @@ int32_t socket_accept(socket_info_t* socket_info)
 
     // Accept incoming connection 
     c = sizeof(struct sockaddr_in);
-    ret = accept(socket_info->sockfd, (struct sockaddr *)&client, (socklen_t*)&c);
+    ret = accept(socket_info->sockfd, (struct sockaddr *)&client_addr, (socklen_t*)&c);
 	if (ret == -1)
 	{
         // Handle non-blocking sockets
@@ -227,7 +227,7 @@ int32_t socket_connect(socket_info_t* socket_info, char* remote_ip_address, int 
 {
     int ret;
     int address_family;
-    struct sockaddr_in server;
+    struct sockaddr_in server_addr;
     int32_t status;
     int error_num;
 
@@ -256,12 +256,12 @@ int32_t socket_connect(socket_info_t* socket_info, char* remote_ip_address, int 
     }
 
     // Prepare the server structure 
-	server.sin_family = address_family;
-	server.sin_addr.s_addr = inet_addr(remote_ip_address);
-	server.sin_port = htons(remote_port_num);  
+    server_addr.sin_family = (sa_family_t)address_family;
+    server_addr.sin_addr.s_addr = inet_addr(remote_ip_address);
+    server_addr.sin_port = htons((uint16_t)remote_port_num);
 
     // Connect to remote address/port 
-	ret = connect(socket_info->sockfd , (struct sockaddr *)&server , sizeof(server));
+    ret = connect(socket_info->sockfd , (struct sockaddr *)&server_addr , sizeof(server_addr));
 	if (ret == -1)
 	{
         error_num = errno;
@@ -311,15 +311,15 @@ int32_t socket_send(socket_info_t* socket_info, uint8_t* buffer, size_t buflen, 
                     return status;           
                 }
             }
-            *bytes_sent = ret;
+            *bytes_sent = (size_t)ret;
             break;
         }
         case dgram:
         {
-            // Prepare the remote_sockaddr structure 
-            remote_sockaddr.sin_family = socket_info->address_family;
+            // Prepare the remote_sockaddr structure
+            remote_sockaddr.sin_family = (socket_info->address_family == ip_ver_4) ? (sa_family_t)AF_INET : (sa_family_t)AF_INET6;
             remote_sockaddr.sin_addr.s_addr = inet_addr(remote_ip_address);
-            remote_sockaddr.sin_port = htons(remote_port_num);
+            remote_sockaddr.sin_port = htons((uint16_t)remote_port_num);
 
             ret = sendto(socket_info->sockfd, (void*)buffer, buflen, 0, (struct sockaddr *)&remote_sockaddr , sizeof(remote_sockaddr));
             if(ret == -1)
@@ -331,10 +331,10 @@ int32_t socket_send(socket_info_t* socket_info, uint8_t* buffer, size_t buflen, 
 
             if(ret != (int) buflen)
             {
-                OS_printf("socket_send: sendto sent only %d out of %lu bytes! \n", ret, buflen);
+                OS_printf("socket_send: sendto sent only %d out of %zu bytes! \n", ret, buflen);
             }
 
-            *bytes_sent = ret;
+            *bytes_sent = (size_t)ret;
             break;
         }
         default: 
@@ -392,7 +392,7 @@ int32_t socket_recv(socket_info_t* socket_info, uint8_t* buffer, size_t buflen, 
                     status = SOCKET_RECV_ERR;     
                     return status;           
                 }
-                *bytes_recvd = ret;
+                *bytes_recvd = (size_t)ret;
             }
             break;
         }
@@ -416,7 +416,7 @@ int32_t socket_recv(socket_info_t* socket_info, uint8_t* buffer, size_t buflen, 
                 status = SOCKET_RECV_ERR;     
                 return status;           
             }   
-            *bytes_recvd = ret;   
+            *bytes_recvd = (size_t)ret;   
             break;
         }
         default: 

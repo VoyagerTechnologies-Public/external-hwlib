@@ -80,8 +80,8 @@ int32_t can_init_dev(can_info_t* device)
   }
   
   // Set timeouts
-  tv.tv_sec = device->second_timeout;
-  tv.tv_usec = device->microsecond_timeout;
+  tv.tv_sec = (time_t)device->second_timeout;
+  tv.tv_usec = (suseconds_t)device->microsecond_timeout;
   retVal = setsockopt(device->sock, SOL_SOCKET, SO_RCVTIMEO, &tv, sizeof(tv));
   if(retVal < 0) 
   {
@@ -140,7 +140,7 @@ int32_t can_write(can_info_t* device)
   // If can_id is > 11 bits, means it is extended frame format (EFF) and need to set bit 31 of the can_id field to signal EFF
   if (device->tx_frame.can_id > 0x7FF) 
   {
-    device->tx_frame.can_id |= 1 << 31;
+    device->tx_frame.can_id |= ((canid_t)1u << 31);
   }
 
   ret = write(device->sock, &device->tx_frame, sizeof(struct can_frame));

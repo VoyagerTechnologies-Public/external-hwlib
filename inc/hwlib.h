@@ -25,14 +25,14 @@ ivv-itc@lists.nasa.gov
 /************************************************************************
 ** Includes
 *************************************************************************/
-#include "libcan.h"
-#include "libi2c.h"
-#include "libmem.h"
-#include "libtrq.h"
-#include "libspi.h"
+//#include "libcan.h"
+//#include "libi2c.h"
+//#include "libmem.h"
+//#include "libtrq.h"
+//#include "libspi.h"
 #include "libuart.h"
-#include "libgpio.h"
-#include "libsocket.h"
+//#include "libgpio.h"
+//#include "libsocket.h"
 
 /************************************************************************
 ** Outside of cFS build
@@ -42,10 +42,15 @@ ivv-itc@lists.nasa.gov
     #include "cfe_endian.h"
 #else
     // Outside cFS
+    #include <stdint.h>
     #pragma GCC diagnostic ignored "-Wall"
     #pragma GCC diagnostic warning "-Wunused-value"
     #define OS_printf           printf
+
+    // Silence implicit-function-declaration for usleep here only
+    #pragma GCC diagnostic ignored "-Wimplicit-function-declaration"
     #define OS_TaskDelay(n)     ( usleep((n) * 1000) )
+
     #if defined (__GNUC__)
       #define OS_PACK         __attribute__ ((packed))
     #else
@@ -54,10 +59,10 @@ ivv-itc@lists.nasa.gov
     #define OS_SUCCESS          0
     #define OS_ERROR           -1
     #define OS_ERR_FILE        -2
-    #define OS_MutSemCreate(n1, n2, n3)    0  
-    #define OS_MutSemDelete(n)             0 
-    #define OS_MutSemTake(n)               0 
-    #define OS_MutSemGive(n)               0  
+    static inline int32_t OS_MutSemCreate(uint32_t *n1, char *n2, uint32_t n3)  {(void)n1; (void)n2; (void)n3; return 0;}
+    static inline int32_t OS_MutSemDelete(uint32_t n)                           { (void)n; return 0; }
+    static inline int32_t OS_MutSemTake(uint32_t n)                             { (void)n; return 0; }
+    static inline int32_t OS_MutSemGive(uint32_t n)                             { (void)n; return 0; }
     #ifdef SOFTWARE_BIG_BIT_ORDER
       #define CFE_MAKE_BIG16(n) (n)
       #define CFE_MAKE_BIG32(n) (n)
@@ -66,5 +71,8 @@ ivv-itc@lists.nasa.gov
       #define CFE_MAKE_BIG32(n) ( (((n) << 24) & 0xFF000000) | (((n) << 8) & 0x00FF0000) | (((n) >> 8) & 0x0000FF00) | (((n) >> 24) & 0x000000FF) )
     #endif
 #endif
+
+/* Prototypes */
+int hwlib_Init(void);
 
 #endif /* _hwlib_h_ */

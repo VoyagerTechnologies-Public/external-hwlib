@@ -15,50 +15,46 @@ NASA IV&V
 ivv-itc@lists.nasa.gov
 */
 
-#ifndef _NOS_ENGINE_LINK_
-#define _NOS_ENGINE_LINK_
+#include <stdint.h>
+#include <stdlib.h>
 
-/* nos */
-#include <Client/CInterface.h>
+#include "libcan.h"
 
-#define NUM_USARTS       30
-#define NUM_I2C_DEVICES  30
-#define NUM_CAN_DEVICES  30
-#define NUM_SPI_DEVICES  30
-#define NUM_GPIO_DEVICES 30
+#define CAN_BASE_CMD_LEN  8
 
-#ifdef __cplusplus
-extern "C" {
-#endif
-
-/* nos engine connection */
-typedef struct {
-    const char* uri;
-    const char* bus;
-} nos_connection_t;
-
-/* nos usart connection table */
-extern nos_connection_t nos_usart_connection[NUM_USARTS];
-
-/* nos i2c connection table */
-extern nos_connection_t nos_i2c_connection[NUM_I2C_DEVICES];
-
-/* nos can connection table */
-extern nos_connection_t nos_can_connection[NUM_CAN_DEVICES];
-
-/* nos spi connection table */
-extern nos_connection_t nos_spi_connection[NUM_SPI_DEVICES];
-
-/* common transport hub */
-extern NE_TransportHub *hub;
-
-/* init/destroy nos engine link (called by nos psp) */
-void nos_init_link(void);
-void nos_destroy_link(void);
-
-#ifdef __cplusplus
+// Bring CAN network interface
+int32_t can_init_dev(can_info_t* device)
+{
+    int32_t result = OS_SUCCESS;
+    return result;        
 }
-#endif
 
-#endif
+// TODO: NOT IMPLEMENTED!
+int32_t can_set_modes(can_info_t* device) 
+{
+	return CAN_SUCCESS;
+}
 
+// Write a can_frame  from `device->tx_Frame` to CAN bus from SocketCAN socket specified by `device`
+int32_t can_write(can_info_t* device)
+{
+    return can_master_transaction(device);
+}
+
+// Read a can_frame from SocketCAN interface specified by `device` into `device->rx_frame`
+int32_t can_read(can_info_t* device)
+{
+    return can_master_transaction(device);
+}
+
+int32_t can_master_transaction(can_info_t* device)
+{
+    int result = CAN_ERROR;
+    return result;
+}
+
+// Bring CAN network interface down
+int32_t can_close_device(can_info_t* device)
+{
+    return CAN_SUCCESS;
+}

@@ -4,7 +4,13 @@
 #include <unistd.h>
 #include <errno.h>
 #include <string.h>
+#include <stdint.h>
 #include "libmem.h"
+
+void *Xil_MMAP(__off_t address, size_t length);
+void Xil_MMAP_close(__off_t shared_addr, __off_t address, size_t length, int read);
+void Xil_MMAP_Out32(unsigned int Addr, unsigned int Value);
+unsigned int Xil_MMAP_In32(unsigned int Addr);
 
 /* * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * *
  *
@@ -21,23 +27,27 @@
  *
  * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * */
 void *Xil_MMAP(__off_t address, size_t length){
-	size_t 	pagesize    = sysconf(_SC_PAGE_SIZE); 
-	__off_t	page_base   = (address / pagesize) * pagesize; 
-	__off_t	page_offset = address - page_base; 
-	unsigned char *sysaddr; 
+    /* sysconf returns long; capture in signed long then convert to size_t
+       to avoid sign-conversion warnings */
+    long pagesize_l = sysconf(_SC_PAGE_SIZE);
+    size_t pagesize = (size_t)pagesize_l;
+    __off_t page_base   = (address / (__off_t)pagesize) * (__off_t)pagesize;
+    __off_t page_offset = address - page_base;
+    unsigned char *sysaddr;
 	int fd, error;  
 
 	if((fd = open("/dev/mem", O_RDWR | O_SYNC)) < 0)
 		return NULL; 
 
-	if((sysaddr = mmap(NULL, page_offset + length, PROT_READ | PROT_WRITE, MAP_SHARED, fd, page_base)) == MAP_FAILED){
+    if((sysaddr = mmap(NULL, (size_t)(page_offset + (__off_t)length), PROT_READ | PROT_WRITE, MAP_SHARED, fd, page_base)) == MAP_FAILED){
         error = errno; 
         OS_printf("MMAP ERROR = %d\n", error); 
 		sysaddr = NULL; 
     }
 	close(fd); 
 
-	return sysaddr + page_offset; 
+    if (sysaddr == NULL) return NULL;
+    return (void *)(sysaddr + (size_t)page_offset);
 }
 
 /* * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * *
@@ -57,20 +67,21 @@ void *Xil_MMAP(__off_t address, size_t length){
  *
  * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * */
 void Xil_MMAP_close(__off_t shared_addr, __off_t address, size_t length, int read){
-	size_t 	pagesize    = sysconf(_SC_PAGE_SIZE); 
-	__off_t	page_base   = (address / pagesize) * pagesize; 
-	__off_t	page_offset = address - page_base; 
+    long pagesize_l = sysconf(_SC_PAGE_SIZE);
+    size_t pagesize = (size_t)pagesize_l;
+    __off_t page_base   = (address / (__off_t)pagesize) * (__off_t)pagesize;
+    __off_t page_offset = address - page_base;
     int     error; 
 
     if(!read){
-        if(msync((void *)(shared_addr - page_offset),  page_offset + length, MS_ASYNC) != 0){
+        if(msync((void *)(shared_addr - page_offset),  (size_t)(page_offset + (__off_t)length), MS_ASYNC) != 0){
             error = errno; 
             OS_printf("MSYNC ERROR = %d\n", error); 
         }
         usleep(10000); 
     }
 
-    if(munmap((void *)(shared_addr - page_offset), page_offset + length)){
+    if(munmap((void *)(shared_addr - page_offset), (size_t)(page_offset + (__off_t)length))){
         error = errno; 
         OS_printf("MUNMAP ERROR = %d\n", error); 
     }
@@ -85,14 +96,14 @@ void Xil_MMAP_close(__off_t shared_addr, __off_t address, size_t length, int rea
  * 
  * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * */
 void Xil_MMAP_Out32(unsigned int Addr, unsigned int Value){
-	volatile unsigned int   *LocalAddr;
+    volatile unsigned int   *LocalAddr;
 
-	if((LocalAddr = Xil_MMAP(Addr, 4)) == NULL)
-		return; 
-	
-    *LocalAddr = Value; 
+    if((LocalAddr = Xil_MMAP((__off_t)Addr, (size_t)4)) == NULL)
+        return;
 
-    Xil_MMAP_close((unsigned long int)LocalAddr, Addr, 4, 0); 
+    *LocalAddr = Value;
+
+    Xil_MMAP_close((__off_t)(uintptr_t)LocalAddr, (__off_t)Addr, (size_t)4, 0);
 }
 
 /* * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * *
@@ -104,16 +115,16 @@ void Xil_MMAP_Out32(unsigned int Addr, unsigned int Value){
  *
  * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * */
 unsigned int Xil_MMAP_In32(unsigned int Addr){
-	volatile unsigned int  *LocalAddr;
-    unsigned int           res; 
+    volatile unsigned int  *LocalAddr;
+    unsigned int           res;
 
-	if((LocalAddr = Xil_MMAP(Addr, 4)) == NULL)
-		return -1; 
+    if((LocalAddr = Xil_MMAP((__off_t)Addr, (size_t)4)) == NULL)
+        return 0xFFFFFFFFu;
 
-    res = *LocalAddr; 
+    res = *LocalAddr;
 
-    Xil_MMAP_close((unsigned long int)LocalAddr, Addr, 4, 1); 
-    return res; 
+    Xil_MMAP_close((__off_t)(uintptr_t)LocalAddr, (__off_t)Addr, (size_t)4, 1);
+    return res;
 }
 
 /* * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * *
@@ -128,18 +139,18 @@ unsigned int Xil_MMAP_In32(unsigned int Addr){
  *
  * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * */
 int32_t devmem_write(uint32_t addr, uint8_t *in, int32_t length){
-	volatile unsigned char *LocalAddr;
-    int                     byte;  
+    volatile unsigned char *LocalAddr;
+    int                     byte;
 
-	if((LocalAddr = Xil_MMAP(addr, length)) == NULL)
-		return -1;  
+    if((LocalAddr = Xil_MMAP((__off_t)addr, (size_t)length)) == NULL)
+        return -1;
 
     for(byte = 0; byte < length; byte++)
-        LocalAddr[byte] = in[byte]; 
+        LocalAddr[byte] = in[byte];
 
-    Xil_MMAP_close((unsigned long int)LocalAddr, addr, length, 0); 
+    Xil_MMAP_close((__off_t)(uintptr_t)LocalAddr, (__off_t)addr, (size_t)length, 0);
 
-    return length; 
+    return length;
 }
 
 
@@ -155,16 +166,16 @@ int32_t devmem_write(uint32_t addr, uint8_t *in, int32_t length){
  *
  * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * */
 int32_t devmem_read(uint32_t addr, uint8_t *out, int32_t length){
-	volatile unsigned char *LocalAddr;
+    volatile unsigned char *LocalAddr;
     int                     byte;
 
-	if((LocalAddr = Xil_MMAP(addr, length)) == NULL)
-		return -1;  
+    if((LocalAddr = Xil_MMAP((__off_t)addr, (size_t)length)) == NULL)
+        return -1;
 
     for(byte = 0; byte < length; byte++)
-        out[byte] = LocalAddr[byte]; 
+        out[byte] = LocalAddr[byte];
 
-    Xil_MMAP_close((unsigned long int)LocalAddr, addr, length, 1); 
+    Xil_MMAP_close((__off_t)(uintptr_t)LocalAddr, (__off_t)addr, (size_t)length, 1);
 
-    return length; 
+    return length;
 }

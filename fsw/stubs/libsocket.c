@@ -1,9 +1,13 @@
+#define _POSIX_C_SOURCE 200112L
 #include "libsocket.h"
 
-#include <sys/socket.h>
 #include <arpa/inet.h>
-#include <fcntl.h>
 #include <errno.h>
+#include <fcntl.h>
+#include <netdb.h>
+#include <netinet/in.h>
+#include <sys/socket.h>
+#include <sys/types.h>
 
 // Creates an endpoint for communication
 // Binds stream, server sockets to localhost and port number
@@ -20,7 +24,114 @@
 //      socket_info->bound  
 int32_t socket_create(socket_info_t* socket_info)
 {
-    return SOCKET_SUCCESS;
+    int ret;
+    int type;
+    int address_family;
+    int protocol;
+    struct sockaddr_in sockaddr;
+    int flags;
+    int optval;
+    socklen_t optlen;
+    int32_t status;
+
+    status = SOCKET_SUCCESS;
+
+    // Set the socket address family
+    if(socket_info->address_family==ip_ver_4)
+    {
+        address_family=AF_INET; // IP version 4
+    }
+    else if(socket_info->address_family==ip_ver_6)
+    {
+        address_family=AF_INET6; // IP version 6
+    }
+    else
+    {
+        status = SOCKET_CREATE_ERR;
+        return status;        
+    }
+
+    // Set the socket type 
+    if(socket_info->type==stream)
+    {
+        type=SOCK_STREAM; // Connection based
+    }
+    else if(socket_info->type==dgram)
+    {
+        type=SOCK_DGRAM; // Connectionless
+    }
+    else
+    {
+        status = SOCKET_CREATE_ERR;
+        return status;        
+    }
+
+    // Set the socket protocol
+    protocol = IPPROTO_IP; // IP protocol
+
+    // Create the socket
+    ret = socket(address_family, type, protocol);
+    if(ret == -1)
+    {
+        status = SOCKET_CREATE_ERR;
+        return status;
+    }
+
+    // Assign values to the socket_info structure 
+    socket_info->sockfd = ret;
+    socket_info->created = true;
+    //OS_printf("socket_info->sockfd = %d\n",socket_info->sockfd);
+    //OS_printf("socket_info->created = %d\n",socket_info->created);
+
+    // Bind server sockets to localhost and port number
+    if(socket_info->category==server || socket_info->type==dgram)
+    {
+        // Prepare the sockaddr_in structure
+        sockaddr.sin_family = (sa_family_t)address_family;
+        if(inet_addr(socket_info->ip_address) != INADDR_NONE)
+        {
+            sockaddr.sin_addr.s_addr = inet_addr(socket_info->ip_address);
+        }
+        else
+        {
+            char ip[16];
+            int check = HostToIp(socket_info->ip_address, ip);
+            if(check == 0)
+            {
+                sockaddr.sin_addr.s_addr = inet_addr(ip);
+            }
+        }
+        sockaddr.sin_port = htons((uint16_t)socket_info->port_num);
+
+        // Bind the socket 
+        ret = bind(socket_info->sockfd,(struct sockaddr *)&sockaddr , sizeof(sockaddr));
+        if(ret != 0)
+        {
+            status = SOCKET_BIND_ERR;
+            return status;
+        }  
+
+        // Assign values to the socket_info structure
+        socket_info->bound = true;
+        //OS_printf("socket_info->bound = %d\n",socket_info->bound);
+    }
+
+    // Make socket non-blocking?
+    if(socket_info->block==false)
+    {
+        flags = fcntl(socket_info->sockfd, F_GETFL, 0);
+        fcntl(socket_info->sockfd, F_SETFL, flags | O_NONBLOCK);
+    }
+
+    // Turn keep alive on?
+    if(socket_info->keep_alive==true)
+    {
+        optval = 1;
+        optlen = sizeof(optval);
+        setsockopt(socket_info->sockfd, SOL_SOCKET, SO_KEEPALIVE, &optval, optlen);      
+    }
+
+    return status;
 }
 
 // Listens on a connection on a socket
@@ -33,7 +144,33 @@ int32_t socket_create(socket_info_t* socket_info)
 //      socket_info->listening
 int32_t socket_listen(socket_info_t* socket_info)
 {
-    return SOCKET_SUCCESS;
+    int ret;
+    int pending_connections_queue_size;
+    int32_t status;
+
+    status = SOCKET_SUCCESS;
+    pending_connections_queue_size = 5;
+    
+    // Only listen on a stream socket that has been bound
+    if( (!socket_info->type==stream)||(!socket_info->bound) )
+    {
+        status = SOCKET_LISTEN_ERR;
+        return status;
+    }
+
+    // Listen on the socket
+    ret = listen(socket_info->sockfd, pending_connections_queue_size);
+    if(ret != 0)
+    {
+        status = SOCKET_LISTEN_ERR;
+        return status;
+    }  
+
+    // Assign values to the socket_info structure
+    socket_info->listening = true;
+    //OS_printf("socket_info->listening = %d\n",socket_info->listening);
+
+    return status;
 }
 
 // Accepts a connection on a socket
@@ -47,7 +184,47 @@ int32_t socket_listen(socket_info_t* socket_info)
 //      socket_info->sockfd
 int32_t socket_accept(socket_info_t* socket_info)
 {
-    return SOCKET_SUCCESS;
+    int c;
+    int ret;
+    struct sockaddr_in client_addr;
+    int32_t status;
+
+    status = SOCKET_SUCCESS;
+
+    // Only accept connections on a socket that is in a listening state
+    if(socket_info->listening==false)
+    {
+		status = SOCKET_ACCEPT_ERR;
+        return status;        
+    }
+
+    // Accept incoming connection 
+    c = sizeof(struct sockaddr_in);
+    ret = accept(socket_info->sockfd, (struct sockaddr *)&client_addr, (socklen_t*)&c);
+	if (ret == -1)
+	{
+        // Handle non-blocking sockets
+        if( (socket_info->block==false) && (errno==EAGAIN) )
+        {
+		    status = SOCKET_TRY_AGAIN;
+            return status;
+        }   
+        if( (socket_info->block==false) && (errno==EWOULDBLOCK) )
+        {
+		    status = SOCKET_TRY_AGAIN;
+            return status;
+        }          
+		status = SOCKET_ACCEPT_ERR;
+        return status;
+	}
+
+    // Assign values to the socket_info structure
+    socket_info->sockfd = ret;
+    socket_info->connected = true;
+    //OS_printf("socket_info->sockfd = %d\n",socket_info->sockfd);
+    //OS_printf("socket_info->connected = %d\n",socket_info->connected);
+
+    return status;
 } 
 
 // Initiates a connection to a remote ip address and port number
@@ -64,20 +241,269 @@ int32_t socket_accept(socket_info_t* socket_info)
 //      socket_info->connected
 int32_t socket_connect(socket_info_t* socket_info, char* remote_ip_address, int remote_port_num)
 {
-    return SOCKET_SUCCESS;
+    int ret;
+    int address_family;
+    struct sockaddr_in server_addr;
+    int32_t status;
+    int error_num;
+
+    status = SOCKET_SUCCESS;
+
+    // Only make outbound connections on client sockets that have been created
+    if(  (socket_info->category!=client)||(!socket_info->created) )
+    {
+        status = SOCKET_CONNECT_ERR;
+        return status; 
+    }
+
+    // Set the socket address family
+    if(socket_info->address_family==ip_ver_4)
+    {
+        address_family=AF_INET; // IP version 4
+    }
+    else if(socket_info->address_family==ip_ver_6)
+    {
+        address_family=AF_INET6; // IP version 6
+    }
+    else
+    {
+        status = SOCKET_CONNECT_ERR;
+        return status;        
+    }
+
+    // Prepare the server structure 
+    server_addr.sin_family = (sa_family_t)address_family;
+    server_addr.sin_addr.s_addr = inet_addr(remote_ip_address);
+    server_addr.sin_port = htons((uint16_t)remote_port_num);  
+
+    // Connect to remote address/port 
+    ret = connect(socket_info->sockfd , (struct sockaddr *)&server_addr , sizeof(server_addr));
+	if (ret == -1)
+	{
+        error_num = errno;
+        // Ignore "Operation in progress" error on a non-blocking socket
+        if( (socket_info->block==0) && (error_num==115) )
+        {
+            // Do nothing 
+        }
+        else
+        {
+            OS_printf("errno = %d\n",error_num);
+            status = SOCKET_CONNECT_ERR;
+            return status;
+        }
+        
+	}    
+
+    // Assign values to the socket_info structure
+    socket_info->connected = true;    
+
+    return status;
 }
 
 int32_t socket_send(socket_info_t* socket_info, uint8_t* buffer, size_t buflen, size_t* bytes_sent, char* remote_ip_address, int remote_port_num)
 {
-    return SOCKET_SUCCESS;
+    int32_t status;
+    struct sockaddr_in remote_sockaddr;
+    status = SOCKET_SUCCESS;
+
+   switch(socket_info->type)
+    {
+        case stream:
+            {
+            // Only send on stream sockets in a connected state
+            if(socket_info->connected == false)
+            {
+                status = SOCKET_SEND_ERR;
+                return status;
+            }
+            else
+            {           
+                ssize_t sret = send(socket_info->sockfd, buffer, buflen, 0);
+                if(sret == -1)
+                {
+                    status = SOCKET_SEND_ERR;     
+                    return status;           
+                }
+                *bytes_sent = (size_t)sret;
+            }
+            break;
+        }
+        case dgram:
+        {
+            // Prepare the remote_sockaddr structure 
+            remote_sockaddr.sin_family = (sa_family_t)socket_info->address_family;
+            if(inet_addr(remote_ip_address) != INADDR_NONE)
+            {
+                remote_sockaddr.sin_addr.s_addr = inet_addr(remote_ip_address);
+            }
+            else
+            {
+                char ip[16];
+                int check = HostToIp(remote_ip_address, ip);
+                if(check == 0)
+                {
+                    remote_sockaddr.sin_addr.s_addr = inet_addr(ip);
+                }
+            }
+            remote_sockaddr.sin_port = htons((uint16_t)remote_port_num);
+
+            ssize_t sret = sendto(socket_info->sockfd, (void*)buffer, buflen, 0, (struct sockaddr *)&remote_sockaddr , sizeof(remote_sockaddr));
+            if(sret == -1)
+            {
+                OS_printf("socket_send: sendto returned error %zd \n", sret);
+                status = SOCKET_SEND_ERR;     
+                return status;           
+            }
+            if((size_t)sret != buflen)
+            {
+                OS_printf("socket_send: sendto sent only %zd out of %zu bytes! \n", sret, buflen);
+            }
+
+            *bytes_sent = (size_t)sret;
+            break;
+        }
+        default: 
+        {
+            status = SOCKET_SEND_ERR; 
+            break;
+        }
+    }
+
+    return status;
 }
 
 int32_t socket_recv(socket_info_t* socket_info, uint8_t* buffer, size_t buflen, size_t* bytes_recvd)
 {
-    return SOCKET_SUCCESS;
+    int c;
+    int32_t status;
+    struct sockaddr_in remote_sockaddr;
+
+    status = SOCKET_SUCCESS;
+
+    switch(socket_info->type)
+    {
+        case stream:
+        {
+            // Only recv on stream sockets in a connected state
+            if(socket_info->connected == false)
+            {
+                status = SOCKET_RECV_ERR;
+                return status;
+            }
+            else
+            {           
+                    ssize_t sret = recv(socket_info->sockfd, (void*)buffer, buflen, 0);
+                    if(sret == 0)
+                    {
+                    // Client disconnected
+                    socket_info->connected = false;
+                    status = SOCKET_RECV_ERR;
+                    return status;
+                }
+                    else if(sret == -1)
+                {
+                    // Handle non-blocking sockets
+                    if( (socket_info->block==false) && (errno==EAGAIN) )
+                    {
+                        status = SOCKET_TRY_AGAIN;
+                        return status;
+                    }   
+                    if( (socket_info->block==false) && (errno==EWOULDBLOCK) )
+                    {
+                        status = SOCKET_TRY_AGAIN;
+                        return status;
+                    }
+                    status = SOCKET_RECV_ERR;     
+                    return status;           
+                }
+                *bytes_recvd = (size_t)sret;
+            }
+            break;
+        }
+        case dgram:
+        {
+            c = sizeof(struct sockaddr_in);
+            ssize_t sret = recvfrom(socket_info->sockfd, (void*)buffer, buflen, 0, (struct sockaddr *)&remote_sockaddr, (socklen_t*)&c);
+            if(sret == -1)
+            {
+                // Handle non-blocking sockets
+                if( (socket_info->block==false) && (errno==EAGAIN) )
+                {
+                    status = SOCKET_TRY_AGAIN;
+                    return status;
+                }   
+                if( (socket_info->block==false) && (errno==EWOULDBLOCK) )
+                {
+                    status = SOCKET_TRY_AGAIN;
+                    return status;
+                }
+                status = SOCKET_RECV_ERR;     
+                return status;           
+            }   
+            *bytes_recvd = (size_t)sret;   
+            break;
+        }
+        default: 
+        {
+            status = SOCKET_RECV_ERR; 
+            break;
+        }
+    }
+
+    return status;
 }
 
 int32_t socket_close(socket_info_t* socket_info)
 {
-    return SOCKET_SUCCESS;
+    int ret;
+    int32_t status;
+
+    status = SOCKET_SUCCESS;
+
+    ret = close(socket_info->sockfd);
+    if(ret == -1)
+    {
+        status = SOCKET_CLOSE_ERR;
+        return status;
+    }
+
+    // Assign values to the socket_info structure
+    // TBD
+
+    return status;
+}
+
+int HostToIp(const char * hostname, char* ip)
+{
+    struct addrinfo hints, *res, *p;
+    int status;
+    void *addr;
+
+    memset(&hints, 0, sizeof hints);
+    hints.ai_family = AF_INET; // Uses IPV4 only.  AF_UNSPEC for IPV6 Support
+    hints.ai_socktype = SOCK_STREAM;
+
+    if ((status = getaddrinfo(hostname, NULL, &hints, &res)) != 0)
+    {
+        return 1;
+    }
+
+    for (p = res; p != NULL; p = p->ai_next)
+    {
+        struct sockaddr_in *ipv4 = (struct sockaddr_in *)p->ai_addr;
+        addr = &(ipv4->sin_addr);
+
+        // Convert IP to String
+        if (inet_ntop(p->ai_family, addr, ip, INET_ADDRSTRLEN) == NULL)
+        {
+            freeaddrinfo(res);
+            return 1;
+        }
+
+        freeaddrinfo(res);
+        return 0; // IP Found
+    }
+    freeaddrinfo(res);
+    return 1; // IP NOT Found
 }
