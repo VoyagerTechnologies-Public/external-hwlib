@@ -83,7 +83,7 @@ int32_t spi_read(spi_info_t* device, uint8_t data[], const uint32_t numBytes)
     if (!device || device->isOpen != SPI_DEVICE_OPEN) return SPI_ERROR;
     transport_port_t* port = get_simulith_device(device);
     if (!port) return SPI_ERROR;
-    int poll_attempts = 100; /* previously 20 */
+    int poll_attempts = 500;
     int got_resp = 0;
     int result = -1;
     for (int i = 0; i < poll_attempts; ++i) {
@@ -112,16 +112,16 @@ int32_t spi_transaction(spi_info_t* device, uint8_t *txBuff, uint8_t * rxBuffer,
     int sent = simulith_transport_send(port, txBuff, length);
     if (sent == (int)length) 
     {
-        int poll_attempts = 100;
+        int poll_attempts = 500;
         int got_resp = 0;
         int r = -1;
-        for (int i = 0; i < poll_attempts; ++i) 
+        for (int i = 0; i < poll_attempts; ++i)
         {
             int available = simulith_transport_available(port);
-            if (available > 0) 
+            if (available > 0)
             {
                 r = simulith_transport_receive(port, rxBuffer, length);
-                if (r == (int)length) 
+                if (r == (int)length)
                 {
                     got_resp = 1;
                     break;
