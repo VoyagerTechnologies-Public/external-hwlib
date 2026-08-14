@@ -18,12 +18,15 @@ ivv-itc@lists.nasa.gov
 #ifndef _lib_gpio_h_
 #define _lib_gpio_h_
 
-/* Includes */
+/* 
+** Includes 
+*/
 #include "hwlib.h"
+#include <errno.h>
 #include <stdint.h>
 #include <stdlib.h>
 #include <stdio.h>
-#include <errno.h>
+#include <string.h>
 #if defined __linux__ 
     #include <fcntl.h>
     #include <unistd.h>

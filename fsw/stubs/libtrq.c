@@ -1,4 +1,4 @@
-/* Copyright (C) 2009 - 2019 National Aeronautics and Space Administration. All Foreign Rights are Reserved to the U.S. Government.
+/* Copyright (C) 2009 - 2020 National Aeronautics and Space Administration. All Foreign Rights are Reserved to the U.S. Government.
 
 This software is provided "as is" without any warranty of any, kind either express, implied, or statutory, including, but not
 limited to, any warranty that the software will conform to, specifications any implied warranties of merchantability, fitness
@@ -15,102 +15,142 @@ NASA IV&V
 ivv-itc@lists.nasa.gov
 */
 
-#include <fcntl.h>
+#include <stdint.h>
+#include <stdlib.h>
+#include <sys/socket.h> 
+#include <arpa/inet.h> 
+#include <netinet/in.h>
+
+/* hwlib API */
 #include "libtrq.h"
-#include "libtrq_ioctl.h"
+#include "libsocket.h"
 
-#define TRQ_FNAME_SIZE 50
+static int num_conn_errors = 0;
+static int num_send_errors = 0;
+static const int PORT = 14242;
+static int sockfd = 0;
+static struct sockaddr_in servaddr;
 
-/* * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * *
- *
- * trq_set_time_high(): Configure the time high per period in nanoseconds for a TRQ device. Time high lengths
- *                      may not exceed a device's period length. 
- *
- * Inputs:              trq_info_t *device      -   TRQ device info structure 
- *                      uint32_t    new_time    -   New time high length for the device period in nanoseconds
- *
- * Outputs:             trq_info_t *device      -   High time set to new_time if successful
- *                      returns int32_t         -   TRQ_ERROR_* type on failure, TRQ_SUCCESS on success
- *
- * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * */
-int32_t trq_set_time_high(trq_info_t* device, uint32_t new_time) 
+static int32_t trq_update(trq_info_t* device)
 {
-    return TRQ_SUCCESS;
+    int32_t status = TRQ_SUCCESS;
+    ssize_t bytes_sent;
+    char message[512];
+    double percent_high_dir = 100.0 * (double)device->timer_high_ns / (double)device->timer_period_ns;
+
+    // Take into account the direction
+    if (device->positive_direction == false)
+    {
+        percent_high_dir = percent_high_dir * -1;
+    }
+
+    // Send to MTB sim, MTB sim must then calculate A-m^2
+    sprintf(message, "%d %f\n", device->trq_num, percent_high_dir);
+
+    if (sockfd >= 0) 
+    {
+        bytes_sent = sendto(sockfd, message, strlen(message), MSG_CONFIRM | MSG_DONTWAIT, (const struct sockaddr *)&servaddr, sizeof(servaddr));
+        if ((bytes_sent < 0) || ((size_t)bytes_sent != strlen(message))) 
+        {
+            if (num_send_errors++ < 10) 
+            { // don't spam
+                printf("NOS command_torquer:  Only sent %ld bytes of %ld bytes.  Message was:  %s\n", bytes_sent, strlen(message), message);
+            }
+            status = TRQ_ERROR;
+        }
+    } else 
+    {
+        if (num_conn_errors++ < 10) 
+        { // don't spam
+            printf("NOS command_torquer:  Socket not connected (%d).\n", sockfd);
+        }
+        status = TRQ_ERROR;
+    }
+
+    return status;
 }
 
-/* * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * *
- *
- * trq_set_period():    Configure the period length for a TRQ device in nanoseconds. Note that timer time high 
- *                      is set to zero before this function is called. 
- *
- * Inputs:              trq_info_t *device      -   TRQ device info structure 
- *
- * Outputs:             returns int32_t         -   TRQ_ERROR on failure, TRQ_SUCCESS on success
- *
- * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * */
-int32_t trq_set_period(trq_info_t* device) 
+int32_t trq_set_time_high(trq_info_t* device, uint32_t new_time)
 {
-    return TRQ_SUCCESS;
+    int32_t status = TRQ_SUCCESS;
+
+    device->timer_high_ns = new_time;
+    status = trq_update(device);
+
+    return status;
 }
 
-
-/* * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * *
- *
- * trq_set_direction():    Configure the direction of the TRQ device. 
- *
- * Inputs:              trq_info_t *device      -   TRQ device info structure 
- *                      bool        direction   -   New direction desired for device
- *
- * Outputs:             trq_info_t *device      -   positive_direction set to direction if successful
- *                      returns int32_t         -   TRQ_ERROR on failure, TRQ_SUCCESS on success
- *
- * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * */
-int32_t trq_set_direction(trq_info_t* device, bool direction) 
+int32_t trq_set_period(trq_info_t* device)
 {
-    return TRQ_SUCCESS;
+    int32_t status = TRQ_SUCCESS;
+    
+    status = trq_update(device);
+
+    return status;
 }
 
-/* * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * *
- *
- * trq_init():          Opens a TRQ device and initializes it. This function can also be
- *                      used on an already opened TRQ number to reset it. 
- *
- * Inputs:              trq_info_t *device  -   TRQ Device info structure to initialize   
- * 
- * Outputs:             trq_info_t *device  -   Info structure contains AXI timer device file descriptor. 
- *                      returns int32_t     -   <0 on failure, TRQ_SUCCESS on success
- *
- * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * */
-int32_t trq_init(trq_info_t* device) 
+int32_t trq_set_direction(trq_info_t* device, bool direction)
 {
-    return TRQ_SUCCESS;
+    int32_t status = TRQ_SUCCESS;
+    
+    device->positive_direction = direction;
+    status = trq_update(device);
+
+    return status;
 }
 
-/* * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * *
- *
- * trq_command():   Change TQR period, time high, or direction.
- *
- * Inputs:              trq_info_t* device      -   TQR device info structure to modify
- *                      uint8_t percent_high    -   Percent of the period to be high (0-100)
- *                      bool pos_dir            -   Direction - True for positive, False for negative
- *
- * Outputs:             trq_info_t *device      -   Parameters set to new values if successful
- *                      returns int32_t         -   TRQ_ERROR_* type on failure, TRQ_SUCCESS on success
- *
- * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * */
-int32_t trq_command(trq_info_t *device, uint8_t percent_high, bool pos_dir)
+int32_t trq_init(trq_info_t* device)
 {
-    return TRQ_SUCCESS;
+    int32_t status = TRQ_SUCCESS;
+    device->enabled = true;
+    device->timer_high_ns = 0;  // no pulse
+
+    // int socket(int domain, int type, int protocol);
+    // int close(int fd)
+
+    if (sockfd == 0) {
+        if ((sockfd = socket(AF_INET, SOCK_DGRAM, 0)) < 0) {
+            OS_printf("NOS trq_init:  Failed to create UDP socket\n");
+        }
+    
+        memset(&servaddr, 0, sizeof(servaddr));
+        
+        // Filling server information 
+        servaddr.sin_family = AF_INET;
+        servaddr.sin_port = htons(PORT);
+        
+        // Look up `trq_sim` from hostname
+        char ip[16];
+        int check = HostToIp("trq-sim", ip);
+        if(check == 0)
+        {
+            servaddr.sin_addr.s_addr = inet_addr(ip);
+        }
+    }
+
+    return status;
 }
 
-/* * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * 
- *
- * trq_close():         Disables and closes an active TRQ device. 
- * 
- * Inputs:              trq_info_t *device - TRQ device info structure for TRQ device to disable
- *
- * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * */
+int32_t trq_command(trq_info_t* device, uint8_t percent_high, bool pos_dir)
+{
+    int32_t status = TRQ_SUCCESS;
+
+    // Calculate time high
+    if (percent_high > 100)
+    {
+        printf("trq_command: Error setting percent high greater than 100! \n");
+        return TRQ_ERROR;
+    }
+
+    device->timer_high_ns = (uint32_t)((double)device->timer_period_ns * ((double)percent_high / 100.0));
+    device->positive_direction = pos_dir;
+    status = trq_update(device);
+
+    return status;
+}
+
 void trq_close(trq_info_t* device)
 {
-    return;
+    device->enabled = false;
+    close(sockfd);
 }

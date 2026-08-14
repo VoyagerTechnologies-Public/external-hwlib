@@ -225,8 +225,8 @@ int32_t trq_command(trq_info_t *device, uint8_t percent_high, bool pos_dir)
         printf("trq_command: Error setting percent high greater than 100! \n");
         return TRQ_ERROR;
     }
-    time_high_ns = device->timer_period_ns * (percent_high / 100.00);
-    
+    time_high_ns = (uint32_t)(device->timer_period_ns * (percent_high / 100.00));
+
     // Change time high? 
     if(device->timer_high_ns != time_high_ns)
     {

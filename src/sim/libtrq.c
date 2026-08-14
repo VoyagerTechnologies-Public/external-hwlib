@@ -15,15 +15,11 @@ NASA IV&V
 ivv-itc@lists.nasa.gov
 */
 
-#include "nos_link.h"
 #include <stdint.h>
 #include <stdlib.h>
 #include <sys/socket.h> 
 #include <arpa/inet.h> 
 #include <netinet/in.h>
-
-/* nos */
-#include <Spi/Client/CInterface.h>
 
 /* hwlib API */
 #include "libtrq.h"

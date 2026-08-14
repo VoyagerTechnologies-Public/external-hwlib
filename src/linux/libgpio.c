@@ -35,7 +35,7 @@ int32_t gpio_init(gpio_info_t* device)
             return GPIO_FD_OPEN_ERR;
         }
         write_size = snprintf(buffer, 128, "%d", device->pin);
-        bytes_written = write(fd, buffer, write_size);
+        bytes_written = write(fd, buffer, (size_t)write_size);
         if (bytes_written < write_size) 
         {
             return GPIO_WRITE_ERR;
@@ -151,7 +151,7 @@ int32_t gpio_close(gpio_info_t* device)
             return GPIO_FD_OPEN_ERR;
         }
         write_size = snprintf(buffer, 128, "%d", device->pin);
-        bytes_written = write(fd, buffer, write_size);
+        bytes_written = write(fd, buffer, (size_t)write_size);
         if (bytes_written < write_size) 
         {
             return GPIO_WRITE_ERR;
