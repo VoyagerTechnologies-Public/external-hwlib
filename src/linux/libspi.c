@@ -193,6 +193,18 @@ int32_t spi_read(spi_info_t* device, uint8_t data[], const uint32_t numBytes)
   return status;  
 }
 
+int32_t spi_read_timeout(spi_info_t* device, uint8_t data[],
+                         const uint32_t numBytes, const uint32_t timeout_ms)
+{
+  /* SPI_IOC_MESSAGE is synchronous: the call returns after the requested
+   * clocks have completed.  There is no readiness object to poll without
+   * starting another bus transaction, so the hardware implementation performs
+   * exactly one read.  Controllers that support an interruptible deadline can
+   * provide that behavior here without changing device drivers. */
+  (void)timeout_ms;
+  return spi_read(device, data, numBytes);
+}
+
 int32_t spi_transaction(spi_info_t* device, uint8_t *txBuff, uint8_t * rxBuffer, uint32_t length, uint16_t delay, uint8_t bits, uint8_t deselect)
 {
   int32_t status = SPI_SUCCESS;

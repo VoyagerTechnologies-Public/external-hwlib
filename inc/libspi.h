@@ -135,6 +135,17 @@ int32_t spi_write(spi_info_t* device, uint8_t data[], const uint32_t numBytes);
 int32_t spi_read(spi_info_t* device, uint8_t data[], const uint32_t numBytes);
 
 /*
+ * Read an exact response with a bounded wait.
+ *
+ * Implementations whose device operation is intrinsically synchronous (for
+ * example Linux spidev) perform one read transaction.  Asynchronous transports
+ * wait until all requested bytes arrive or the monotonic timeout expires.  This
+ * lets target-neutral device drivers avoid blind task delays before a read.
+ */
+int32_t spi_read_timeout(spi_info_t* device, uint8_t data[],
+                         const uint32_t numBytes, const uint32_t timeout_ms);
+
+/*
  * Perform a full duplex SPI transaction
  * 
  * @param spi_info_t struct with all spi params
