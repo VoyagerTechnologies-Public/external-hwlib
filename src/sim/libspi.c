@@ -17,6 +17,7 @@ ivv-itc@lists.nasa.gov
 
 #include "simulith.h"
 #include "libspi.h"
+#include <limits.h>
 
 // Storage for transport_port_t devices mapped to spi_info_t devices
 #define HWLIB_SPI_MAX_DEVICES (MAX_SPI_BUSES * 8)
@@ -73,31 +74,29 @@ int32_t spi_write(spi_info_t* device, uint8_t data[], const uint32_t numBytes)
     
     transport_port_t* port = get_simulith_device(device);
     if (!port) return SPI_ERROR;
-    int result = simulith_transport_send(port, data, numBytes);
+    int result = simulith_transport_request(port, data, numBytes,
+                                            SIMULITH_TRANSPORT_DEFAULT_TIMEOUT_MS);
     if (result < 0) return SPI_ERROR;
     return result;
 }
 
 int32_t spi_read(spi_info_t* device, uint8_t data[], const uint32_t numBytes)
 {
+    return spi_read_timeout(device, data, numBytes,
+                            SIMULITH_TRANSPORT_DEFAULT_TIMEOUT_MS);
+}
+
+int32_t spi_read_timeout(spi_info_t* device, uint8_t data[],
+                         const uint32_t numBytes, const uint32_t timeout_ms)
+{
     if (!device || device->isOpen != SPI_DEVICE_OPEN) return SPI_ERROR;
     transport_port_t* port = get_simulith_device(device);
     if (!port) return SPI_ERROR;
-    int poll_attempts = 500;
-    int got_resp = 0;
-    int result = -1;
-    for (int i = 0; i < poll_attempts; ++i) {
-        int available = simulith_transport_available(port);
-        if (available > 0) {
-            result = simulith_transport_receive(port, data, numBytes);
-            if (result == (int)numBytes) {
-                got_resp = 1;
-                break;
-            }
-        }
-        OS_TaskDelay(2);
-    }
-    if (!got_resp) return SPI_ERROR;
+    int bounded_timeout = timeout_ms > (uint32_t)INT_MAX ?
+        INT_MAX : (int)timeout_ms;
+    int result = simulith_transport_receive_exact(
+        port, data, numBytes, bounded_timeout);
+    if (result != (int)numBytes) return SPI_ERROR;
     return result;
 }
 
@@ -109,27 +108,13 @@ int32_t spi_transaction(spi_info_t* device, uint8_t *txBuff, uint8_t * rxBuffer,
     if (!port) return SPI_ERROR;
 
     int32_t status = -1;
-    int sent = simulith_transport_send(port, txBuff, length);
+    int sent = simulith_transport_request(port, txBuff, length,
+                                          SIMULITH_TRANSPORT_DEFAULT_TIMEOUT_MS);
     if (sent == (int)length) 
     {
-        int poll_attempts = 500;
-        int got_resp = 0;
-        int r = -1;
-        for (int i = 0; i < poll_attempts; ++i)
-        {
-            int available = simulith_transport_available(port);
-            if (available > 0)
-            {
-                r = simulith_transport_receive(port, rxBuffer, length);
-                if (r == (int)length)
-                {
-                    got_resp = 1;
-                    break;
-                }
-            }
-            OS_TaskDelay(2);
-        }
-        if (got_resp) status = SIMULITH_TRANSPORT_SUCCESS;
+        int received = simulith_transport_receive_exact(
+            port, rxBuffer, length, SIMULITH_TRANSPORT_DEFAULT_TIMEOUT_MS);
+        if (received == (int)length) status = SIMULITH_TRANSPORT_SUCCESS;
     }
     if (status != SIMULITH_TRANSPORT_SUCCESS) return SPI_ERROR;
     return SPI_SUCCESS;

@@ -67,25 +67,17 @@ int32_t gpio_read(gpio_info_t* device, uint8_t* value)
     if (!port) return GPIO_ERROR;
     // Send read request: [cmd=0, pin]
     uint8_t req[2] = {0, (uint8_t)device->pin};
-    int rc = simulith_transport_send(port, req, sizeof(req));
+    int rc = simulith_transport_request(port, req, sizeof(req),
+                                        SIMULITH_TRANSPORT_DEFAULT_TIMEOUT_MS);
     if (rc != 2) return GPIO_ERROR;
-    // Poll for response: [cmd=0, pin, value]
+    // Wait for the complete response: [cmd=0, pin, value]
     uint8_t resp[3];
-    int poll_attempts = 20;
-    int got_resp = 0;
-    for (int i = 0; i < poll_attempts; ++i) {
-        int available = simulith_transport_available(port);
-        if (available > 0) {
-            rc = simulith_transport_receive(port, resp, sizeof(resp));
-            if (rc == 3 && resp[0] == 0 && resp[1] == (uint8_t)device->pin) {
-                *value = resp[2];
-                got_resp = 1;
-                break;
-            }
-        }
-        OS_TaskDelay(2);
+    rc = simulith_transport_receive_exact(
+        port, resp, sizeof(resp), SIMULITH_TRANSPORT_DEFAULT_TIMEOUT_MS);
+    if (rc == 3 && resp[0] == 0 && resp[1] == (uint8_t)device->pin) {
+        *value = resp[2];
+        return GPIO_SUCCESS;
     }
-    if (got_resp) return GPIO_SUCCESS;
     return GPIO_ERROR;
 }
 
@@ -98,7 +90,8 @@ int32_t gpio_write(gpio_info_t* device, uint8_t value)
     if (!port) return GPIO_ERROR;
     // Send write request: [cmd=1, pin, value]
     uint8_t req[3] = {1, (uint8_t)device->pin, (uint8_t)(value & 0x1)};
-    int rc = simulith_transport_send(port, req, sizeof(req));
+    int rc = simulith_transport_request(port, req, sizeof(req),
+                                        SIMULITH_TRANSPORT_DEFAULT_TIMEOUT_MS);
     if (rc == 3) return GPIO_SUCCESS;
     return GPIO_ERROR;
 }

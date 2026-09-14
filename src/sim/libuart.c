@@ -103,7 +103,9 @@ int32_t uart_write_port(uart_info_t* device, uint8_t data[], const uint32_t numB
 {
     int idx = (int)(device->handle);
     if (idx < 0 || idx >= HWLIB_UART_MAX_PORTS || !simulith_uart_ports[idx]) return UART_ERROR;
-    int32_t status = simulith_transport_send((transport_port_t*)simulith_uart_ports[idx], data, numBytes);
+    int32_t status = simulith_transport_request((transport_port_t*)simulith_uart_ports[idx],
+                                                data, numBytes,
+                                                SIMULITH_TRANSPORT_DEFAULT_TIMEOUT_MS);
     if((uint32_t) status != numBytes)
     {
         OS_printf("HWLIB: simulith_uart_send failed with status %d\n", status);
