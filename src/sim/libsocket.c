@@ -359,7 +359,7 @@ int32_t socket_send(socket_info_t* socket_info, uint8_t* buffer, size_t buflen, 
 
             if(ret != (int) buflen)
             {
-                OS_printf("socket_send: sendto sent only %d out of %ld bytes! \n", ret, buflen);
+                OS_printf("socket_send: sendto sent only %d out of %zu bytes! \n", ret, buflen);
             }
 
             *bytes_sent = ret;
